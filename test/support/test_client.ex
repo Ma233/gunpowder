@@ -186,10 +186,7 @@ defmodule WebSockex.TestClient do
     {:ok, state}
   end
 
-  def handle_disconnect(
-        %{attempt_number: attempt} = failure_map,
-        %{multiple_reconnect: pid} = state
-      ) do
+  def handle_disconnect(%{attempt_number: attempt} = failure_map, %{multiple_reconnect: pid} = state) do
     send(pid, {:retry_connect, failure_map})
     send(pid, {:check_retry_state, %{attempt: attempt, state: state}})
     {:reconnect, Map.put(state, :attempt, attempt)}
@@ -206,10 +203,7 @@ defmodule WebSockex.TestClient do
     {:reconnect, state}
   end
 
-  def handle_disconnect(
-        %{reason: {:remote, :closed}},
-        %{catch_disconnect: pid, reconnect: true} = state
-      ) do
+  def handle_disconnect(%{reason: {:remote, :closed}}, %{catch_disconnect: pid, reconnect: true} = state) do
     send(pid, {:caught_disconnect, :reconnecting})
     {:reconnect, state}
   end
@@ -226,7 +220,10 @@ defmodule WebSockex.TestClient do
     super(map, state)
   end
 
-  def handle_disconnect(%{reason: {_, :normal}} = map, %{catch_disconnect: pid} = state) do
+  def handle_disconnect(
+        %{reason: {_, :normal}} = map,
+        %{catch_disconnect: pid} = state
+      ) do
     send(pid, :caught_disconnect)
     super(map, state)
   end

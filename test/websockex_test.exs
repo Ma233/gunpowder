@@ -135,8 +135,7 @@ defmodule WebSockexTest do
     end
 
     test "returns an error with a bad url" do
-      assert TestClient.start_link("lemon_pie", :ok) ==
-               {:error, %WebSockex.URLError{url: "lemon_pie"}}
+      assert TestClient.start_link("lemon_pie", :ok) == {:error, %WebSockex.URLError{url: "lemon_pie"}}
     end
   end
 
@@ -178,8 +177,7 @@ defmodule WebSockexTest do
     end
 
     test "returns an error with a bad url" do
-      assert TestClient.start_link("lemon_pie", :ok) ==
-               {:error, %WebSockex.URLError{url: "lemon_pie"}}
+      assert TestClient.start_link("lemon_pie", :ok) == {:error, %WebSockex.URLError{url: "lemon_pie"}}
     end
   end
 
@@ -368,15 +366,10 @@ defmodule WebSockexTest do
       # Really glad that I got those sys behaviors now
       :sys.suspend(pid)
 
-      test_pid = self()
-
       task =
         Task.async(fn ->
-          send(test_pid, :task_started)
           WebSockex.send_frame(pid, {:text, "hello"})
         end)
-
-      assert_receive :task_started
 
       :gen_tcp.shutdown(conn.socket, :write)
 
@@ -993,13 +986,11 @@ defmodule WebSockexTest do
       assert_receive {:retry_connect, %{conn: %WebSockex.Conn{}, attempt_number: 1}}
       assert_receive {:check_retry_state, %{attempt: 1}}
 
-      assert_receive {:retry_connect,
-                      %{conn: %WebSockex.Conn{}, reason: %{code: 403}, attempt_number: 2}}
+      assert_receive {:retry_connect, %{conn: %WebSockex.Conn{}, reason: %{code: 403}, attempt_number: 2}}
 
       assert_receive {:check_retry_state, %{attempt: 2, state: %{attempt: 1}}}
 
-      assert_receive {:stopping_retry,
-                      %{conn: %WebSockex.Conn{}, reason: %{code: 403}, attempt_number: 3}}
+      assert_receive {:stopping_retry, %{conn: %WebSockex.Conn{}, reason: %{code: 403}, attempt_number: 3}}
 
       assert_receive {:DOWN, _ref, :process, ^client_pid, %WebSockex.RequestError{code: 403}}
     end
@@ -1089,8 +1080,7 @@ defmodule WebSockexTest do
     end
 
     test "doesn't get invoked during initial connect without retry", context do
-      assert {:error, _} =
-               TestClient.start_link(context.url <> "bad", %{catch_init_connect_failure: self()})
+      assert {:error, _} = TestClient.start_link(context.url <> "bad", %{catch_init_connect_failure: self()})
 
       refute_receive :caught_initial_conn_failure
     end
@@ -1103,29 +1093,19 @@ defmodule WebSockexTest do
                  handle_initial_conn_failure: true
                )
 
-      assert_received {:retry_connect,
-                       %{conn: %WebSockex.Conn{}, reason: %{code: 404}, attempt_number: 1}}
-
       assert_received {:check_retry_state, %{attempt: 1}}
 
-      assert_received {:retry_connect,
-                       %{conn: %WebSockex.Conn{}, reason: %{code: 404}, attempt_number: 2}}
+      assert_received {:retry_connect, %{conn: %WebSockex.Conn{}, reason: %{code: 404}, attempt_number: 2}}
 
       assert_received {:check_retry_state, %{attempt: 2, state: %{attempt: 1}}}
 
-      assert_received {:stopping_retry,
-                       %{conn: %WebSockex.Conn{}, reason: %{code: 404}, attempt_number: 3}}
+      assert_received {:stopping_retry, %{conn: %WebSockex.Conn{}, reason: %{code: 404}, attempt_number: 3}}
     end
 
     test "can reconnect with a new conn struct during an initial connection retry", context do
       state_map = %{change_conn_reconnect: self(), good_url: context.url, catch_text: self()}
 
-      assert {:ok, _} =
-               TestClient.start_link(
-                 context.url <> "bad",
-                 state_map,
-                 handle_initial_conn_failure: true
-               )
+      assert {:ok, _} = TestClient.start_link(context.url <> "bad", state_map, handle_initial_conn_failure: true)
 
       server_pid = WebSockex.TestServer.receive_socket_pid()
 
@@ -1196,8 +1176,18 @@ defmodule WebSockexTest do
   end
 
   test "Won't exit on a request error", context do
+    {:error, request_error} = TestClient.start_link(context.url <> "blah", %{})
+    [Server: "Cowboy", Date: date, "Content-Length": "0"] = request_error.headers
+
     assert TestClient.start_link(context.url <> "blah", %{}) ==
-             {:error, %WebSockex.RequestError{code: 404, message: "Not Found"}}
+             {:error,
+              %WebSockex.RequestError{
+                code: 404,
+                message: "Not Found",
+                body: "",
+                headers: [Server: "Cowboy", Date: date, "Content-Length": "0"],
+                version: {1, 1}
+              }}
   end
 
   describe "default implementation errors" do
@@ -1213,9 +1203,7 @@ defmodule WebSockexTest do
       frame = {:text, "Hello"}
       send(context.server_pid, {:send, frame})
 
-      message =
-        "No handle_frame/2 clause in #{__MODULE__}.BareClient provided for #{inspect(frame)}"
-
+      message = "No handle_frame/2 clause in #{__MODULE__}.BareClient provided for #{inspect(frame)}"
       assert_receive {:EXIT, _, {%RuntimeError{message: ^message}, _}}
     end
 
@@ -1276,7 +1264,12 @@ defmodule WebSockexTest do
       Process.flag(:trap_exit, true)
       send(context.server_pid, :connection_wait)
 
-      {:ok, pid} = TestClient.start_link(context.url, %{catch_terminate: self()}, async: true)
+      {:ok, pid} =
+        TestClient.start_link(
+          context.url,
+          %{catch_terminate: self()},
+          async: true
+        )
 
       {:data, data} =
         elem(:sys.get_status(pid), 3)
@@ -1303,8 +1296,10 @@ defmodule WebSockexTest do
       assert {"Connection Status", :connecting} in data
 
       new_server_pid = WebSockex.TestServer.receive_socket_pid()
+
       send(new_server_pid, :connection_continue)
-      ^new_server_pid = WebSockex.TestServer.receive_socket_pid()
+
+      new_server_pid = WebSockex.TestServer.receive_socket_pid()
 
       send(new_server_pid, :send_ping)
       assert_receive :received_pong
@@ -1388,8 +1383,7 @@ defmodule WebSockexTest do
       end
 
       test "child_spec/1" do
-        assert %{id: TestClient, start: {TestClient, :start_link, [:state]}} =
-                 TestClient.child_spec(:state)
+        assert %{id: TestClient, start: {TestClient, :start_link, [:state]}} = TestClient.child_spec(:state)
       end
     end
 
