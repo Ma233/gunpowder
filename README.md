@@ -2,10 +2,15 @@
 
 [![Build Status](https://travis-ci.org/Azolo/websockex.svg?branch=master)](https://travis-ci.org/Azolo/websockex)
 [![Build status](https://ci.appveyor.com/api/projects/status/jtat5j0vkh6o2ypy?svg=true)](https://ci.appveyor.com/project/Azolo/websockex)
+[![Module Version](https://img.shields.io/hexpm/v/websockex.svg)](https://hex.pm/packages/websockex)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/websockex/)
+[![Total Download](https://img.shields.io/hexpm/dt/websockex.svg)](https://hex.pm/packages/websockex)
+[![License](https://img.shields.io/hexpm/l/websockex.svg)](https://github.com/Azolo/websockex/blob/master/LICENSE)
+[![Last Updated](https://img.shields.io/github/last-commit/Azolo/websockex.svg)](https://github.com/Azolo/websockex/commits/master)
 
 An Elixir Websocket Client.
 
-A simple implementation could be
+A simple implementation could be:
 
 ```elixir
 defmodule WebSocketExample do
@@ -31,21 +36,25 @@ See the `examples/` directory for other examples or take a look at the [document
 
 ## Installation
 
-Add `websockex` to your list of dependencies in `mix.exs`:
+Add `:websockex` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
-  [{:websockex, "~> 0.4.3"}]
+  [
+    {:websockex, "~> 0.4.3"}
+  ]
 end
 ```
 
 ### With Elixir releases prior to version  1.4
 
-Ensure `websockex` is started before your application:
+Ensure `:websockex` is started before your application:
 
 ```elixir
 def application do
-  [applications: [:websockex]]
+  [
+    applications: [:websockex]
+  ]
 end
 ```
 
@@ -66,7 +75,7 @@ some knowledge of the spec. However it is an excellent library.
 
 ## Supervision and Linking
 
-A WebSockex based process is a easily able to fit into any supervision tree. It supports all the necessary capabilites
+A WebSockex based process is a easily able to fit into any supervision tree. It supports all the necessary capabilities
 to do so. In addition, it supports the `Supervisor` children format introduced in Elixir 1.5. So in any version of
 Elixir after 1.5, you can simply do:
 
@@ -105,7 +114,7 @@ However, the recommendation is to always use `start_link/3` and if necessary tra
 
 This is because `start/3` creates a detached process and has the capability to produce zombie processes outside of any
 application tree. This is generally a good piece of advice for any process, however since a module using WebSockex
-bevhaviour can be written as a self-sustaining tcp connection. I feel like it is even more important to express this
+behaviour can be written as a self-sustaining TCP connection. I feel like it is even more important to express this
 particular piece of advice here.
 
 ## Telemetry
@@ -118,7 +127,7 @@ Websockex clients emit the following telemetry events:
 * `[:websockex, :frame, :sent]`
 * `[:websockex, :terminate]`
 
-For all these events, the measurements is `%{time: System.system_time()}` and they all share common metadata as a map containing the `:conn` and the `:module` keys. For frame events, the metadata also contains the `:frame` key. For disconnections and terminations, it will contain the `:reason` key. 
+For all these events, the measurements is `%{time: System.system_time()}` and they all share common metadata as a map containing the `:conn` and the `:module` keys. For frame events, the metadata also contains the `:frame` key. For disconnections and terminations, it will contain the `:reason` key.
 
 
 ## Tips
@@ -172,6 +181,11 @@ iex> EchoClient.echo(pid, "Hi")
 :ok
 *DBG* #PID<0.379.0> received frame: {:text, "Hi"}
 ```
+## Copyright and License
+
+Copyright (c) 2017 Justin Baker
+
+Released under the MIT License, which can be found in the repository in [`LICENSE`](https://github.com/Azolo/websockex/blob/master/LICENSE).
 
 [special_process]: http://erlang.org/doc/design_principles/spec_proc.html
 [docs]: https://hexdocs.pm/websockex

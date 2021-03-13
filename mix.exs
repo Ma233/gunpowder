@@ -1,14 +1,15 @@
 defmodule WebSockex.Mixfile do
   use Mix.Project
 
+  @source_url "https://github.com/Azolo/websockex"
+  @version "0.4.3"
+
   def project do
     [
       app: :websockex,
       name: "WebSockex",
-      version: "0.4.3",
+      version: @version,
       elixir: "~> 1.3",
-      description: "An Elixir WebSocket client",
-      source_url: "https://github.com/Azolo/websockex",
       build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -34,7 +35,7 @@ defmodule WebSockex.Mixfile do
 
   defp deps do
     [
-      {:ex_doc, "~> 0.14", only: :dev, runtime: false},
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:cowboy, "~> 1.0.0", only: :test},
       {:plug, "~> 1.0", only: :test}
     ] ++ optional_deps(otp_release())
@@ -47,17 +48,23 @@ defmodule WebSockex.Mixfile do
   defp optional_deps(_), do: []
 
   defp package do
-    %{
+    [
+      description: "An Elixir WebSocket client",
       licenses: ["MIT"],
       maintainers: ["Justin Baker"],
-      links: %{"GitHub" => "https://github.com/Azolo/websockex"}
-    }
+      links: %{
+        "Changelog" => "https://hexdocs.pm/websockex/changelog.html",
+        "GitHub" => @source_url
+      }
+    ]
   end
 
   defp docs do
     [
-      extras: ["README.md"],
-      main: "readme"
+      extras: ["CHANGELOG.md", "README.md"],
+      main: "readme",
+      source_url: @source_url,
+      source_ref: "#{@version}"
     ]
   end
 
