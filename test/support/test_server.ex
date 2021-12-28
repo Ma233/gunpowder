@@ -105,6 +105,9 @@ defmodule WebSockex.TestSocket do
           :connection_continue ->
             {:cowboy_websocket, req, state}
         end
+
+      :immediate_reply ->
+        immediate_reply(req)
     end
   end
 
@@ -192,4 +195,39 @@ defmodule WebSockex.TestSocket do
   end
 
   def websocket_info(_, state), do: {:ok, state}
+
+  defp immediate_reply(req) do
+    state = req |> Map.fetch!(:pid) |> :sys.get_state()
+
+    {transport, socket} =
+      case state |> elem(3) do
+        {:sslsocket, {transport, socket, _, _}, _} when is_port(socket) ->
+          {transport, socket}
+
+        socket when is_port(socket) ->
+          {state |> elem(4), socket}
+      end
+
+    key = req |> Map.fetch!(:headers) |> Map.fetch!("sec-websocket-key")
+
+    challenge = :crypto.hash(:sha, key <> "258EAFA5-E914-47DA-95CA-C5AB0DC85B11") |> Base.encode64()
+
+    handshake =
+      [
+        "HTTP/1.1 101 Test Socket Upgrade",
+        "Connection: Upgrade",
+        "Upgrade: websocket",
+        "Sec-WebSocket-Accept: #{challenge}",
+        "\r\n"
+      ]
+      |> Enum.join("\r\n")
+
+    frame = <<1::1, 0::3, 1::4, 0::1, 15::7, "Immediate Reply">>
+
+    transport.send(socket, handshake)
+    Process.sleep(0)
+    transport.send(socket, frame)
+
+    Process.sleep(:infinity)
+  end
 end

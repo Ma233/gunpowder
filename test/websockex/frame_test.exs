@@ -19,20 +19,19 @@ defmodule WebSockex.FrameTest do
   @binary :erlang.term_to_binary(:hello)
 
   alias WebSockex.{Frame}
-  import Bitwise
 
   def unmask(key, payload, acc \\ <<>>)
   def unmask(_, <<>>, acc), do: acc
 
   for x <- 1..3 do
     def unmask(<<key::8*unquote(x), _::binary>>, <<payload::8*unquote(x)>>, acc) do
-      part = payload ^^^ key
+      part = Bitwise.bxor(payload, key)
       <<acc::binary, part::8*unquote(x)>>
     end
   end
 
   def unmask(<<key::8*4>>, <<payload::8*4, rest::binary>>, acc) do
-    part = payload ^^^ key
+    part = Bitwise.bxor(payload, key)
     unmask(<<key::8*4>>, rest, <<acc::binary, part::8*4>>)
   end
 
