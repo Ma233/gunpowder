@@ -209,11 +209,7 @@ defmodule WebSockex do
   Invoked when the Websocket receives a ping frame
   """
   @callback handle_ping(ping_frame :: :ping | {:ping, binary}, state :: term) ::
-              {:ok, new_state}
-              | {:reply, frame, new_state}
-              | {:close, new_state}
-              | {:close, close_frame, new_state}
-            when new_state: term
+              {:reply, :pong | {:pong, term}, term}
 
   @doc """
   Invoked when the Websocket receives a pong frame.
@@ -294,7 +290,7 @@ defmodule WebSockex do
       @doc false
       def handle_info(message, state) do
         require Logger
-        Logger.error("No handle_info/2 clause in #{__MODULE__} provided for #{inspect(message)}")
+        _ = Logger.error("No handle_info/2 clause in #{__MODULE__} provided for #{inspect(message)}")
         {:ok, state}
       end
 
@@ -341,8 +337,7 @@ defmodule WebSockex do
 
   See `start_link/4` for more information.
   """
-  @spec start(url :: String.t() | WebSockex.Conn.t(), module, term, options) ::
-          {:ok, pid} | {:error, term}
+  @spec start(url :: String.t() | WebSockex.Conn.t(), module, term, options) :: {:ok, pid} | {:error, term}
   def start(conn_info, module, state, opts \\ [])
 
   def start(%WebSockex.Conn{} = conn, module, state, opts) do
@@ -375,7 +370,7 @@ defmodule WebSockex do
           {:ok, pid} | {:error, term}
   def start_link(conn_info, module, state, opts \\ [])
 
-  def start_link(conn = %WebSockex.Conn{}, module, state, opts) do
+  def start_link(%WebSockex.Conn{} = conn, module, state, opts) do
     Utils.spawn(:link, conn, module, state, opts)
   end
 
@@ -423,13 +418,11 @@ defmodule WebSockex do
   end
 
   def send_frame(client, frame) do
-    try do
-      {:ok, res} = :gen.call(client, :"$websockex_send", frame)
-      res
-    catch
-      _, reason ->
-        exit({reason, {__MODULE__, :call, [client, frame]}})
-    end
+    {:ok, res} = :gen.call(client, :"$websockex_send", frame)
+    res
+  rescue
+    reason ->
+      exit({reason, {__MODULE__, :call, [client, frame]}})
   end
 
   @doc false
@@ -496,7 +489,7 @@ defmodule WebSockex do
 
   @doc false
   def format_status(opt, [pdict, sys_state, parent, debug, state]) do
-    log = :sys.get_debug(:log, debug, [])
+    log = :sys.get_log(debug)
     module_misc = module_status(opt, state.module, pdict, state.module_state)
 
     [
@@ -523,7 +516,7 @@ defmodule WebSockex do
       case result do
         {:"$EXIT", _} ->
           require Logger
-          Logger.error("There was an error while invoking #{module}.format_status/2")
+          _ = Logger.error("There was an error while invoking #{module}.format_status/2")
           default
 
         other when is_list(other) ->
@@ -589,7 +582,7 @@ defmodule WebSockex do
         :sys.handle_system_msg(req, from, parent, __MODULE__, debug, state)
 
       {:"$websockex_send", from, _frame} ->
-        :gen.reply(from, {:error, %WebSockex.NotConnectedError{connection_state: :opening}})
+        _ = :gen.reply(from, {:error, %WebSockex.NotConnectedError{connection_state: :opening}})
         open_loop(parent, debug, state)
 
       {:EXIT, ^parent, reason} ->
@@ -679,10 +672,17 @@ defmodule WebSockex do
         close_loop(reason, parent, debug, state)
 
       {:"$websockex_send", from, _frame} ->
-        :gen.reply(from, {:error, %WebSockex.NotConnectedError{connection_state: :closing}})
+        _ = :gen.reply(from, {:error, %WebSockex.NotConnectedError{connection_state: :closing}})
         close_loop(reason, parent, debug, state)
 
       {close_mod, ^socket} when close_mod in [:tcp_closed, :ssl_closed] ->
+        new_conn = %{conn | socket: nil}
+        debug = Utils.sys_debug(debug, :closed, state)
+        purge_timer(timer_ref, :websockex_close_timeout)
+        state = Map.delete(state, :timer_ref)
+        on_disconnect(reason, parent, debug, %{state | conn: new_conn})
+
+      {:tcp_closed, ^socket} ->
         new_conn = %{conn | socket: nil}
         debug = Utils.sys_debug(debug, :closed, state)
         purge_timer(timer_ref, :websockex_close_timeout)
@@ -807,7 +807,7 @@ defmodule WebSockex do
         # A `with` that includes `else` clause isn't tail recursive (elixir-lang/elixir#6251)
         res =
           with {:ok, binary_frame} <- WebSockex.Frame.encode_frame(frame),
-               do: WebSockex.Conn.socket_send(state.conn, binary_frame)
+               do: _ = WebSockex.Conn.socket_send(state.conn, binary_frame)
 
         case res do
           :ok ->
@@ -822,10 +822,7 @@ defmodule WebSockex do
         handle_close({:local, :normal}, parent, debug, %{state | module_state: new_state})
 
       {:close, {close_code, message}, new_state} ->
-        handle_close({:local, close_code, message}, parent, debug, %{
-          state
-          | module_state: new_state
-        })
+        handle_close({:local, close_code, message}, parent, debug, %{state | module_state: new_state})
 
       {:"$EXIT", reason} ->
         handle_terminate_close(reason, parent, debug, state)
@@ -871,7 +868,7 @@ defmodule WebSockex do
   end
 
   defp handle_error_close(reason, parent, debug, state) do
-    send_close_frame(:error, state.conn)
+    _ = send_close_frame(:error, state.conn)
 
     timer_ref = Process.send_after(self(), :"$websockex_close_timeout", 5000)
     close_loop(reason, parent, debug, Map.put(state, :timer_ref, timer_ref))
@@ -904,17 +901,16 @@ defmodule WebSockex do
       :ok ->
         execute_telemetry([:websockex, :frame, :sent], state, %{frame: frame})
 
-        :gen.reply(from, :ok)
+        _ = :gen.reply(from, :ok)
         debug = Utils.sys_debug(debug, {:socket_out, :sync_send, frame}, state)
         websocket_loop(parent, debug, state)
 
-      {:error, %WebSockex.ConnError{original: reason}} = error
-      when reason in [:closed, :einval] ->
-        :gen.reply(from, error)
+      {:error, %WebSockex.ConnError{original: reason}} = error when reason in [:closed, :einval] ->
+        _ = :gen.reply(from, error)
         handle_close(error, parent, debug, state)
 
       {:error, _} = error ->
-        :gen.reply(from, error)
+        _ = :gen.reply(from, error)
         websocket_loop(parent, debug, state)
     end
   end

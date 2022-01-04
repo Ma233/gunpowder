@@ -3,8 +3,6 @@ defmodule WebSockex.Frame do
   Functions for parsing and encoding frames.
   """
 
-  import Bitwise
-
   @type opcode :: :text | :binary | :close | :ping | :pong
   @type close_code :: 1000..4999
 
@@ -33,7 +31,19 @@ defmodule WebSockex.Frame do
   Parses a bitstring and returns a frame.
   """
   @spec parse_frame(bitstring) ::
-          :incomplete | {:ok, frame, buffer} | {:error, %WebSockex.FrameError{}}
+          :incomplete
+          | {:ok, frame, buffer}
+          | {:error,
+             %WebSockex.FrameError{
+               buffer: binary(),
+               opcode: :close | :ping | :pong | :text,
+               reason:
+                 :close_with_single_byte_payload
+                 | :control_frame_too_large
+                 | :invalid_close_code
+                 | :invalid_utf8
+                 | :nonfin_control_frame
+             }}
   def parse_frame(data) when bit_size(data) < 16 do
     :incomplete
   end
@@ -46,27 +56,16 @@ defmodule WebSockex.Frame do
 
     # Large Control Frames
     def parse_frame(<<1::1, 0::3, unquote(opcode)::4, 0::1, 126::7, _::bitstring>> = buffer) do
-      {:error,
-       %WebSockex.FrameError{
-         reason: :control_frame_too_large,
-         opcode: unquote(key),
-         buffer: buffer
-       }}
+      {:error, %WebSockex.FrameError{reason: :control_frame_too_large, opcode: unquote(key), buffer: buffer}}
     end
 
     def parse_frame(<<1::1, 0::3, unquote(opcode)::4, 0::1, 127::7, _::bitstring>> = buffer) do
-      {:error,
-       %WebSockex.FrameError{
-         reason: :control_frame_too_large,
-         opcode: unquote(key),
-         buffer: buffer
-       }}
+      {:error, %WebSockex.FrameError{reason: :control_frame_too_large, opcode: unquote(key), buffer: buffer}}
     end
 
     # Nonfin Control Frames
     def parse_frame(<<0::1, 0::3, unquote(opcode)::4, 0::1, _::7, _::bitstring>> = buffer) do
-      {:error,
-       %WebSockex.FrameError{reason: :nonfin_control_frame, opcode: unquote(key), buffer: buffer}}
+      {:error, %WebSockex.FrameError{reason: :nonfin_control_frame, opcode: unquote(key), buffer: buffer}}
     end
   end
 
@@ -76,16 +75,12 @@ defmodule WebSockex.Frame do
   end
 
   for {_key, opcode} <- Map.take(@opcodes, [:continuation, :text, :binary]) do
-    def parse_frame(
-          <<_::1, 0::3, unquote(opcode)::4, 0::1, 126::7, len::16, remaining::bitstring>>
-        )
+    def parse_frame(<<_::1, 0::3, unquote(opcode)::4, 0::1, 126::7, len::16, remaining::bitstring>>)
         when byte_size(remaining) < len do
       :incomplete
     end
 
-    def parse_frame(
-          <<_::1, 0::3, unquote(opcode)::4, 0::1, 127::7, len::64, remaining::bitstring>>
-        )
+    def parse_frame(<<_::1, 0::3, unquote(opcode)::4, 0::1, 127::7, len::64, remaining::bitstring>>)
         when byte_size(remaining) < len do
       :incomplete
     end
@@ -93,19 +88,11 @@ defmodule WebSockex.Frame do
 
   # Close Frame with Single Byte
   def parse_frame(<<1::1, 0::3, 8::4, 0::1, 1::7, _::bitstring>> = buffer) do
-    {:error,
-     %WebSockex.FrameError{
-       reason: :close_with_single_byte_payload,
-       opcode: :close,
-       buffer: buffer
-     }}
+    {:error, %WebSockex.FrameError{reason: :close_with_single_byte_payload, opcode: :close, buffer: buffer}}
   end
 
   # Parse Close Frames with Payloads
-  def parse_frame(
-        <<1::1, 0::3, 8::4, 0::1, len::7, close_code::integer-size(16), remaining::bitstring>> =
-          buffer
-      )
+  def parse_frame(<<1::1, 0::3, 8::4, 0::1, len::7, close_code::integer-size(16), remaining::bitstring>> = buffer)
       when close_code in 1000..4999 do
     size = len - 2
     <<payload::bytes-size(size), rest::bitstring>> = remaining
@@ -160,16 +147,12 @@ defmodule WebSockex.Frame do
 
   # Start of Fragmented Message
   for {key, opcode} <- Map.take(@opcodes, [:text, :binary]) do
-    def parse_frame(
-          <<0::1, 0::3, unquote(opcode)::4, 0::1, 126::7, len::16, remaining::bitstring>>
-        ) do
+    def parse_frame(<<0::1, 0::3, unquote(opcode)::4, 0::1, 126::7, len::16, remaining::bitstring>>) do
       <<payload::bytes-size(len), rest::bitstring>> = remaining
       {:ok, {:fragment, unquote(key), payload}, rest}
     end
 
-    def parse_frame(
-          <<0::1, 0::3, unquote(opcode)::4, 0::1, 127::7, len::64, remaining::bitstring>>
-        ) do
+    def parse_frame(<<0::1, 0::3, unquote(opcode)::4, 0::1, 127::7, len::64, remaining::bitstring>>) do
       <<payload::bytes-size(len), rest::bitstring>> = remaining
       {:ok, {:fragment, unquote(key), payload}, rest}
     end
@@ -215,19 +198,27 @@ defmodule WebSockex.Frame do
   @doc """
   Parses and combines two frames in a fragmented segment.
   """
-  @spec parse_fragment({:fragment, :text | :binary, binary}, {:continuation | :finish, binary}) ::
-          {:fragment, :text | :binary, binary}
-          | {:text | :binary, binary}
-          | {:error, %WebSockex.FragmentParseError{}}
+  @spec parse_fragment(
+          {:fragment, :text | :binary, binary},
+          {:continuation | :finish, binary}
+        ) ::
+          {:ok, {:binary, binary()}}
+          | {:error,
+             %WebSockex.FragmentParseError{
+               reason: :invalid_utf8 | :two_start_frames,
+               fragment: {:fragment, any(), any()},
+               continuation: {:fragment, any(), any()}
+             }}
+          | {:error,
+             %WebSockex.FrameError{
+               reason: :invalid_utf8 | :two_start_frames,
+               opcode: :text,
+               buffer: binary()
+             }}
   def parse_fragment(fragmented_parts, continuation_frame)
 
   def parse_fragment({:fragment, _, _} = frame0, {:fragment, _, _} = frame1) do
-    {:error,
-     %WebSockex.FragmentParseError{
-       reason: :two_start_frames,
-       fragment: frame0,
-       continuation: frame1
-     }}
+    {:error, %WebSockex.FragmentParseError{reason: :two_start_frames, fragment: frame0, continuation: frame1}}
   end
 
   def parse_fragment({:fragment, type, fragment}, {:continuation, continuation}) do
@@ -275,15 +266,13 @@ defmodule WebSockex.Frame do
       len = byte_size(payload)
       masked_payload = mask(mask, payload)
 
-      {:ok,
-       <<1::1, 0::3, unquote(opcode)::4, 1::1, len::7, mask::bytes-size(4),
-         masked_payload::binary-size(len)>>}
+      {:ok, <<1::1, 0::3, unquote(opcode)::4, 1::1, len::7, mask::bytes-size(4), masked_payload::binary-size(len)>>}
     end
   end
 
   # Encode Close Frames
   def encode_frame({:close, close_code, <<payload::binary>>})
-      when not (close_code in 1000..4999) do
+      when close_code not in 1000..4999 do
     {:error,
      %WebSockex.FrameEncodeError{
        reason: :close_code_out_of_range,
@@ -325,8 +314,8 @@ defmodule WebSockex.Frame do
       masked_payload = mask(mask, payload)
 
       {:ok,
-       <<1::1, 0::3, unquote(opcode)::4, 1::1, payload_len_bin::bits-size(payload_len_size),
-         mask::bytes-size(4), masked_payload::binary>>}
+       <<1::1, 0::3, unquote(opcode)::4, 1::1, payload_len_bin::bits-size(payload_len_size), mask::bytes-size(4),
+         masked_payload::binary>>}
     end
 
     # Start Fragments!
@@ -336,8 +325,8 @@ defmodule WebSockex.Frame do
       masked_payload = mask(mask, payload)
 
       {:ok,
-       <<0::1, 0::3, unquote(opcode)::4, 1::1, payload_len_bin::bits-size(payload_len_size),
-         mask::bytes-size(4), masked_payload::binary>>}
+       <<0::1, 0::3, unquote(opcode)::4, 1::1, payload_len_bin::bits-size(payload_len_size), mask::bytes-size(4),
+         masked_payload::binary>>}
     end
   end
 
@@ -349,8 +338,8 @@ defmodule WebSockex.Frame do
       masked_payload = mask(mask, payload)
 
       {:ok,
-       <<unquote(fin_bit)::1, 0::3, 0::4, 1::1, payload_len_bin::bits-size(payload_len_size),
-         mask::bytes-size(4), masked_payload::binary>>}
+       <<unquote(fin_bit)::1, 0::3, 0::4, 1::1, payload_len_bin::bits-size(payload_len_size), mask::bytes-size(4),
+         masked_payload::binary>>}
     end
   end
 
@@ -372,17 +361,10 @@ defmodule WebSockex.Frame do
 
   defp get_payload_length_bin(payload) do
     case byte_size(payload) do
-      size when size <= 125 ->
-        {<<size::7>>, 7}
-
-      size when size <= 0xFFFF ->
-        {<<126::7, size::16>>, 16 + 7}
-
-      size when size <= 0x7FFFFFFFFFFFFFFF ->
-        {<<127::7, 0::1, size::63>>, 64 + 7}
-
-      _ ->
-        raise "WTF, Seriously? You're trying to send a payload larger than #{0x7FFFFFFFFFFFFFFF} bytes?"
+      size when size <= 125 -> {<<size::7>>, 7}
+      size when size <= 0xFFFF -> {<<126::7, size::16>>, 16 + 7}
+      size when size <= 0x7FFFFFFFFFFFFFFF -> {<<127::7, 0::1, size::63>>, 64 + 7}
+      _ -> raise "WTF, Seriously? You're trying to send a payload larger than #{0x7FFFFFFFFFFFFFFF} bytes?"
     end
   end
 
@@ -391,13 +373,13 @@ defmodule WebSockex.Frame do
 
   for x <- 1..3 do
     defp mask(<<key::8*unquote(x), _::binary>>, <<part::8*unquote(x)>>, acc) do
-      masked = part ^^^ key
+      masked = Bitwise.bxor(part, key)
       <<acc::binary, masked::8*unquote(x)>>
     end
   end
 
   defp mask(<<key::32>> = key_bin, <<part::8*4, rest::binary>>, acc) do
-    masked = part ^^^ key
+    masked = Bitwise.bxor(part, key)
     mask(key_bin, rest, <<acc::binary, masked::8*4>>)
   end
 end
