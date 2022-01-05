@@ -198,15 +198,8 @@ defmodule WebSockex.TestSocket do
 
   defp immediate_reply(req) do
     state = req |> Map.fetch!(:pid) |> :sys.get_state()
-
-    {transport, socket} =
-      case state |> elem(3) do
-        {:sslsocket, {transport, socket, _, _}, _} when is_port(socket) ->
-          {transport, socket}
-
-        socket when is_port(socket) ->
-          {state |> elem(4), socket}
-      end
+    socket = state |> elem(3)
+    transport = state |> elem(4)
 
     key = req |> Map.fetch!(:headers) |> Map.fetch!("sec-websocket-key")
 
